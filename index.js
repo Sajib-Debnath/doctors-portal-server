@@ -3,12 +3,12 @@ const app = express()
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
 const cors = require('cors');
+const stripe = require("stripe")('sk_test_51NUu4mSDI3RLAaahdaE6wadmS49SqvBNWqpmtjEQGJFIdKw95NYXE0ZEKEAJjqcTNk30cOE6jDHSh3jWeFsha0rL00QAFtFG8S');
 require('dotenv').config();
 const port = process.env.PORT || '5000'
 
 app.use(cors())
 app.use(express.json())
-
 
 
 
@@ -50,6 +50,7 @@ async function run() {
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
         const userCollection = client.db('doctorsPortal').collection('users')
         const doctorCollection = client.db('doctorsPortal').collection('doctors')
+        const paymentsCollection = client.db('doctorsPortal').collection('payments')
 
         //We need use this middleware next to verifyJWT
         const verifyAdmin = async (req, res, next) => {
@@ -68,7 +69,6 @@ async function run() {
 
         app.get('/appointmentOption', async (req, res) => {
             const date = req.query.date;
-            console.log(date);
             const query = {}
             const options = await appointmentOptionCollection.find(query).toArray()
 
@@ -159,7 +159,7 @@ async function run() {
 
         app.put('/users/admin/:id', verifyJWT, verifyAdmin, async (req, res) => {
             const id = req.params.id
-            console.log(id)
+            // console.log(id)
             const filter = { _id: new ObjectId(id) }
             const option = { upsert: true }
             const updateDoc = {
@@ -206,7 +206,6 @@ async function run() {
         //             price: 98
         //         }
         //     }
-        //     console.log("hit")
         //     const result = await appointmentOptionCollection.updateMany(filter, updatedDoc, options)
         //     res.send(result)
         // })
@@ -225,6 +224,38 @@ async function run() {
         })
 
 
+
+        app.post('/create-payment-intent', async (req, res) => {
+            const booking = req.body;
+            const price = booking.price;
+            const amount = price * 100;
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                currency: 'usd',
+                amount: amount,
+                "payment_method_types": [
+                    "card"
+                ]
+            });
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        });
+
+        app.post('/payments', async (req, res) => {
+            const payment = req.body;
+            const result = await paymentsCollection.insertOne(payment);
+            const id = payment.bookingId
+            const filter = { _id: ObjectId(id) }
+            const updatedDoc = {
+                $set: {
+                    paid: true,
+                    transactionId: payment.transactionId
+                }
+            }
+            const updatedResult = await bookingsCollection.updateOne(filter, updatedDoc)
+            res.send(result);
+        })
 
     } finally {
 
